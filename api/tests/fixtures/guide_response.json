@@ -1,0 +1,14 @@
+{
+  "groups": [
+    {
+      "summary": "Uniqueness",
+      "applicability": "",
+      "kind": "rule",
+      "members": [
+        "v1:c01",
+        "v2:c01"
+      ]
+    }
+  ],
+  "exclusions": []
+}

@@ -1,0 +1,57 @@
+{
+  "name": "PostgreSQL integrity (authored fixture)",
+  "videos": [
+    {
+      "position": 1,
+      "title": "Authored fixture 1",
+      "source_url": "https://www.instagram.com/reel/FIXTURE_1/",
+      "segments": [
+        {
+          "id": "s001",
+          "start_ms": 12000,
+          "end_ms": 21000,
+          "text": "Enforce a unique constraint on event and seat."
+        }
+      ],
+      "claims": [
+        {
+          "id": "c01",
+          "kind": "recommendation",
+          "instruction": "Enforce uniqueness on event and seat.",
+          "condition": "a seat can be sold for different events",
+          "evidence": [
+            "s001"
+          ]
+        }
+      ],
+      "video_id": "1"
+    },
+    {
+      "position": 2,
+      "title": "Authored fixture 2",
+      "source_url": "https://www.instagram.com/reel/FIXTURE_2/",
+      "segments": [
+        {
+          "id": "s001",
+          "start_ms": 12000,
+          "end_ms": 21000,
+          "text": "Enforce a unique constraint on event and seat."
+        }
+      ],
+      "claims": [
+        {
+          "id": "c01",
+          "kind": "recommendation",
+          "instruction": "Enforce uniqueness on event and seat.",
+          "condition": "a seat can be sold for different events",
+          "evidence": [
+            "s001"
+          ]
+        }
+      ],
+      "video_id": "2"
+    }
+  ],
+  "prompt_version": "reelnotes-1",
+  "model": "fixture-model"
+}

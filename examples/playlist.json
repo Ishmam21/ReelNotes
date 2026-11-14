@@ -1,0 +1,22 @@
+{
+  "name": "PostgreSQL integrity (authored fixture)",
+  "fixture": true,
+  "items": [
+    {
+      "video_id": "1",
+      "position": 1,
+      "title": "Authored fixture 1",
+      "source_url": "https://www.instagram.com/reel/FIXTURE_1/",
+      "state": "ready",
+      "thumbnail_data_uri": null
+    },
+    {
+      "video_id": "2",
+      "position": 2,
+      "title": "Authored fixture 2",
+      "source_url": "https://www.instagram.com/reel/FIXTURE_2/",
+      "state": "ready",
+      "thumbnail_data_uri": null
+    }
+  ]
+}
