@@ -1,8 +1,11 @@
 {
+  "title": "PostgreSQL data integrity",
+  "scope": "Apply these instructions when implementing seat bookings across events.",
   "groups": [
     {
-      "summary": "Uniqueness",
-      "applicability": "",
+      "section": "Booking uniqueness",
+      "summary": "Enforce uniqueness on the event and seat together.",
+      "applicability": "Apply this constraint when a seat can be sold for different events.",
       "kind": "rule",
       "members": [
         "v1:c01",

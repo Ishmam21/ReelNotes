@@ -85,3 +85,33 @@ References: [Next.js App Router](https://nextjs.org/docs/app/getting-started/lay
 Mappings assume UUID identifiers and lease tokens, timezone-aware timestamps, JSONB segments/claims/results/snapshots, bytea thumbnails, integer positions/durations/attempts, and textual state/error fields. Confirm these types against the owner-managed SQL before first database execution; no SQL file was present to inspect. Initial unprocessed segments must be SQL NULL (an empty JSON array means successfully transcribed empty speech).
 
 Example outputs: [authored fixture AGENTS.md](examples/AGENTS.md), [authored fixture playlist.json](examples/playlist.json). These are generated from explicitly fictional sample sources.
+
+### Startup review fixes
+
+The API now allows both localhost and 127.0.0.1 browser origins on the configured local web port. Use port 3000, or change WEB_ORIGIN to the actual browser origin before restarting the API. CORS preflight regression tests were added but cannot execute until FastAPI/pytest are installed.
+
+Optional frame-thumbnail failures now allow audio decoding to continue (mocked regression check passed). Downloader auxiliary errors are tolerated only when an actual completed media file exists; unusable downloads still fail. Worker errors for unavailable sources, timeouts, and media limits now preserve actionable messages. Playlist name input matches the API's 120-character limit.
+
+Dependency installation was retried during startup review and still failed with DNS errors for npm and PyPI. Python compilation passed again. End-to-end runtime correctness remains unverified.
+
+### Gemini structured-output diagnostics
+
+Run `uv run python -m app.check_gemini` from `api/`. It prints SDK versions and credential-free generation settings, then tries plain LangChain, a minimal schema, original application schemas, filtered schemas, and both application passes using authored sample text. It does not connect to PostgreSQL. Original-schema failures may be expected; compare them with filtered results.
+
+With langchain-google-genai 4.5.0 / langchain-core 1.8.0 / google-genai 3.3.0 / Pydantic 2.14.3, the Mac probes passed plain LangChain and a minimal schema but rejected both application schemas, including after string bounds were removed. The exact rejected keyword is unknown. Provider schemas now resolve local references and fully inline their targets, retaining only type, properties, required, items, and enum. The original strict Pydantic models still validate every response locally before evidence and grouping checks. This environment's live probes fail DNS resolution; live acceptance of the simplified schemas and both end-to-end passes must be checked on the Mac.
+
+Restart the worker and API, then Retry the failed video. Committed transcript segments plus a valid duration let the worker resume extraction without downloading or transcribing again.
+
+### Agent instruction exports
+
+New guides contain a topic title, brief scope, useful section headings and consolidated imperative instructions. The export omits source links, timestamps, citation labels and source lists. A review section appears only for actual conflicts, missing context or decisions. Prompt version 5 creates a new snapshot; old downloaded and saved versions remain unchanged.
+
+Open **Evidence for this guide version** below the Markdown preview to inspect the immutable original claims, their source links and timestamped transcript evidence, instruction-to-claim mappings and exclusions. The view reads `GET /guides/{id}/evidence`, using the saved snapshot rather than current playlist membership. PostgreSQL continues storing all evidence.
+
+Verification: 13 direct-run fixture checks cover clean consolidated wording, duplicate merging with internal references, conflicts, uncertainty/missing context, unknown references, injection rejection, original strict schema validation, saved evidence retrieval and the authored example. Next.js production build passed. Real-playlist generation could not be verified here because Neon DNS resolution fails. From `api/`, run:
+
+```sh
+uv run python -m app.export_playlist --shortcode DbO58xwPayj
+```
+
+This uses the normal immutable-guide generation path and writes `examples/real-playlist/AGENTS.md`. If multiple playlists contain the Reel, specify `--playlist-id YOUR_PLAYLIST_UUID`. It reuses saved video claims and transcripts; it does not redownload or transcribe. The output still needs comparison with the actual advice for semantic faithfulness; reference validation alone cannot prove that a paraphrase is supported.

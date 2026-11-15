@@ -3,6 +3,11 @@ import os
 from functools import lru_cache
 
 
+def has_committed_transcript(video):
+    # A database default [] alone is not evidence that media was processed.
+    return video.get('segments') is not None and (video.get('duration_ms') or 0) > 0
+
+
 def normalize_segments(segments):
     result = []
     for segment in segments:

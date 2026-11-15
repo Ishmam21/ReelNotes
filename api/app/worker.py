@@ -13,7 +13,7 @@ from sqlalchemy import text
 from app.db import get_engine
 from app.guide import extract_claims
 from app.ingest import download_reel, prepare_media, webp_thumbnail
-from app.transcribe import transcribe_audio
+from app.transcribe import transcribe_audio, has_committed_transcript
 
 ACTIVE = ('downloading', 'transcribing', 'extracting')
 PIPELINE_VERSION = '1'
@@ -26,7 +26,7 @@ class LeaseLost(Exception):
 
 def next_stage(video):
     # An empty committed transcript is valid and must not trigger transcription again.
-    return 'extracting' if video['segments'] is not None else 'downloading'
+    return 'extracting' if has_committed_transcript(video) else 'downloading'
 
 
 def claim_job():
@@ -96,7 +96,8 @@ def process_job(job, local_clip=None):
             directory = Path(folder)
             segments = job['segments']
             title = job['title'] or f"Instagram Reel {job['shortcode']}"
-            if segments is None:
+            if not has_committed_transcript(job):
+                logging.info('Video %s: preparing media', job['id'])
                 media = dict(path=str(local_clip), title='Owned local sample', creator='Local fixture') if local_clip else download_reel(job['source_url'], directory)
                 audio, duration, thumbnail = prepare_media(media['path'], directory)
                 for path in directory.glob('media.*'):
@@ -108,18 +109,21 @@ def process_job(job, local_clip=None):
                 title = media['title']
                 save_stage(job, title=title, creator=media.get('creator'), duration_ms=duration,
                            thumbnail_webp=thumbnail, state='transcribing')
+                logging.info('Video %s: transcribing (first use may download model weights)', job['id'])
                 segments = transcribe_audio(audio)
                 save_stage(job, segments=segments, state='extracting')
+            logging.info('Video %s: extracting advice with Gemini', job['id'])
             claims = extract_claims(title, segments)
             save_stage(job, claims=claims, state='ready', pipeline_version=PIPELINE_VERSION,
                        lease_token=None, lease_until=None)
+            logging.info('Video %s: ready (%s claims)', job['id'], len(claims))
     except LeaseLost:
         logging.info('Discarded result after ownership expired')
     except Exception as exc:
         try:
             code = getattr(exc, 'code', 'processing_failed')
             message = ('Required media dependency is missing. Install ffmpeg and ffprobe, then retry.'
-                       if isinstance(exc, FileNotFoundError) else 'Processing failed. Check worker configuration, then retry or remove this clip.')
+                       if isinstance(exc, FileNotFoundError) else str(exc) if code in ('source_unavailable', 'download_timeout', 'media_limit') else 'Processing failed. Check worker configuration, then retry or remove this clip.')
             save_stage(job, state='failed', error_code=code, error_message=message,
                        lease_token=None, lease_until=None)
         except LeaseLost:
@@ -147,12 +151,19 @@ def sweep_abandoned():
 
 def main():
     logging.basicConfig(level=logging.INFO)
+    logging.info('ReelNotes worker starting; checking queued jobs')
     sweep_abandoned()
+    waiting = False
     while True:
         job = claim_job()
         if job:
+            waiting = False
+            logging.info('Claimed video %s', job['id'])
             process_job(job)
         else:
+            if not waiting:
+                logging.info('No queued jobs. Waiting for Reels added through the app.')
+                waiting = True
             time.sleep(2)
 
 

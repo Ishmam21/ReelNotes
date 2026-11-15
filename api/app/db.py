@@ -7,7 +7,8 @@ from sqlalchemy import MetaData, Table, Column, String, Integer, DateTime, Large
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.engine import make_url
 
-load_dotenv(Path(__file__).resolve().parents[1] / ".env")
+# This local app uses api/.env as its configuration, even if the shell has older exports.
+load_dotenv(Path(__file__).resolve().parents[1] / ".env", override=True)
 metadata = MetaData(schema="reelnotes")
 playlists = Table("playlists", metadata, Column("id", UUID(as_uuid=True), primary_key=True), Column("name", String), Column("created_at", DateTime(timezone=True)))
 videos = Table("videos", metadata,
@@ -27,4 +28,4 @@ def get_engine():
     url = make_url(value)
     if url.get_backend_name() not in ("postgres", "postgresql"):
         raise RuntimeError("DATABASE_URL must use PostgreSQL.")
-    return create_engine(url.set(drivername="postgresql+psycopg"), pool_size=3, max_overflow=2, pool_pre_ping=True)
+    return create_engine(url.set(drivername="postgresql+psycopg"), pool_size=3, max_overflow=2, pool_pre_ping=True, hide_parameters=True)

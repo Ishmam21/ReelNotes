@@ -22,7 +22,7 @@ def canonicalize_url(value):
         parsed = urlsplit(value)
         if parsed.scheme != 'https' or parsed.netloc not in ('instagram.com', 'www.instagram.com'):
             raise ValueError('Use an HTTPS instagram.com Reel URL without a port or credentials.')
-        match = re.fullmatch(r'/reel/([A-Za-z0-9_-]+)/?', parsed.path)
+        match = re.fullmatch(r'/(?:[A-Za-z0-9_.]+/)?reel/([A-Za-z0-9_-]+)/?', parsed.path)
         if not match:
             raise ValueError('Use a URL in the form https://www.instagram.com/reel/SHORTCODE/.')
         code = match.group(1)
@@ -67,9 +67,13 @@ def prepare_media(path, directory):
     thumbnail = None
     if any(s['codec_type'] == 'video' for s in metadata['streams']):
         frame = directory / 'frame.jpg'
-        subprocess.run(['ffmpeg', '-nostdin', '-y', '-i', str(path), '-frames:v', '1', '-vf', 'scale=480:-1', str(frame)],
-                       capture_output=True, check=True, timeout=30)
-        thumbnail = webp_thumbnail(frame)
+        try:
+            subprocess.run(['ffmpeg', '-nostdin', '-y', '-i', str(path), '-frames:v', '1', '-vf', 'scale=480:-1', str(frame)],
+                           capture_output=True, check=True, timeout=30)
+            thumbnail = webp_thumbnail(frame)
+        except (subprocess.SubprocessError, OSError, ValueError):
+            # A thumbnail is optional; continue decoding the usable audio track.
+            thumbnail = None
     audio = directory / 'speech.wav'
     subprocess.run(['ffmpeg', '-nostdin', '-y', '-i', str(path), '-vn', '-ac', '1', '-ar', '16000', str(audio)],
                    capture_output=True, check=True, timeout=60)
@@ -89,7 +93,7 @@ def download_child(url, directory):
     options = dict(noplaylist=True, socket_timeout=15, retries=2, fragment_retries=2,
                    format='bestaudio/best', outtmpl=str(directory / 'media.%(ext)s'),
                    progress_hooks=[progress], quiet=True, max_filesize=MAX_BYTES,
-                   writethumbnail=True)
+                   writethumbnail=True, ignoreerrors="only_download")
     with yt_dlp.YoutubeDL(options) as downloader:
         info = downloader.extract_info(url, download=False)
         if not info or info.get('_type') in ('playlist', 'multi_video') or 'entries' in info:

@@ -40,7 +40,7 @@ def test_empty_playlist_name_rejected():
 
 
 def test_card_excludes_binary_and_transcripts():
-    row = dict(id=uuid4(), position=3, title="Test", source_url="https://www.instagram.com/reel/Test/", thumbnail_webp=b"webp", segments=[{"text": "private payload"}], state="ready", error_code=None, error_message=None, claims=[])
+    row = dict(id=uuid4(), position=3, title="Test", source_url="https://www.instagram.com/reel/Test/", thumbnail_webp=b"webp", duration_ms=1000, segments=[{"text": "private payload"}], state="ready", error_code=None, error_message=None, claims=[])
     result = main.card(row)
     assert "segments" not in result and "thumbnail_webp" not in result
     assert result["thumbnail_url"].endswith("/thumbnail")
@@ -57,3 +57,32 @@ def test_remove_only_membership(monkeypatch):
     query = str(connection.execute.call_args.args[0].compile(dialect=postgresql.dialect()))
     assert query.startswith("DELETE FROM reelnotes.playlist_items")
     assert "DELETE FROM reelnotes.videos" not in query
+
+@pytest.mark.parametrize('origin', ['http://localhost:3000', 'http://127.0.0.1:3000'])
+def test_loopback_cors_preflight(origin):
+    response = TestClient(main.app).options('/playlists', headers={
+        'Origin': origin, 'Access-Control-Request-Method': 'POST',
+        'Access-Control-Request-Headers': 'content-type'})
+    assert response.status_code == 200
+    assert response.headers['access-control-allow-origin'] == origin
+
+
+def test_cors_rejects_unrelated_origin():
+    response = TestClient(main.app).options('/playlists', headers={
+        'Origin': 'https://unrelated.example', 'Access-Control-Request-Method': 'POST'})
+    assert response.status_code == 400
+    assert 'access-control-allow-origin' not in response.headers
+
+
+def test_database_handler_logs_original_traceback(monkeypatch, caplog):
+    from sqlalchemy.exc import OperationalError
+    def broken_engine():
+        raise OperationalError('SELECT 1', {'secret': 'must-not-be-logged'},
+                               RuntimeError('connection diagnostic'), hide_parameters=True)
+    monkeypatch.setattr(main, 'get_engine', broken_engine)
+    with caplog.at_level('ERROR', logger='app.main'):
+        response = TestClient(main.app).get('/playlists')
+    assert response.status_code == 503
+    assert 'connection diagnostic' in caplog.text
+    assert 'broken_engine' in caplog.text
+    assert 'must-not-be-logged' not in caplog.text
