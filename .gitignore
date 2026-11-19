@@ -10,3 +10,6 @@ __pycache__/
 .env
 .env.local
 *.tsbuildinfo
+
+# Local comprehensive project documentation
+/docs/REELNOTES_PROJECT_GUIDE.md
