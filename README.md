@@ -6,13 +6,7 @@ ReelNotes helps developers turn advice from public Instagram Reels into reviewab
 ![FastAPI](https://img.shields.io/badge/FastAPI-API-009688?logo=fastapi&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-database-4169E1?logo=postgresql&logoColor=white)
 
-<!-- Add docs/screenshots/playlist-workspace.png, then uncomment the image below.
 <img src="docs/screenshots/playlist-workspace.png" alt="ReelNotes playlist workspace with processed Reel cards and a generated AGENTS.md guide side by side" width="900">
--->
-
-> **Workspace screenshot placeholder** · `docs/screenshots/playlist-workspace.png`
->
-> Capture a populated playlist with two or three processed Reels and the generated guide visible beside them.
 
 ## Contents
 
@@ -64,12 +58,15 @@ Entry points are the [FastAPI routes](api/app/main.py), [background worker](api/
 
 ## Screenshots
 
-Use PNGs in `docs/screenshots/`. After adding them, uncomment the image tags in this README and remove the placeholder captions. Use example data or crop out any real account email.
+### Playlist library
 
-| Playlist library | Guide evidence |
+<img src="docs/screenshots/playlist-library.png" alt="ReelNotes library showing the new-playlist form and saved playlists" width="900">
+
+### Generated guide and evidence
+
+| Final Markdown guide | Guide evidence |
 | --- | --- |
-| <!-- <img src="docs/screenshots/playlist-library.png" alt="ReelNotes library showing the new-playlist form and a list of saved playlists" width="420"> --> `docs/screenshots/playlist-library.png` | <!-- <img src="docs/screenshots/guide-evidence.png" alt="Expanded ReelNotes guide evidence showing an instruction linked to a source Reel and timestamped transcript excerpt" width="420"> --> `docs/screenshots/guide-evidence.png` |
-| Capture the home page with the new-playlist form and a few saved playlists. | Expand the evidence panel and capture an instruction alongside its linked claim and transcript excerpt. |
+| <img src="docs/screenshots/guide-markdown.png" alt="Generated AGENTS.md guide in the ReelNotes Markdown preview" width="420"> | <img src="docs/screenshots/guide-evidence.png" alt="Expanded guide evidence showing a source Reel and timestamped transcript excerpts" width="420"> |
 
 ## Tech stack
 
