@@ -34,7 +34,7 @@ ReelNotes helps developers turn advice from public Instagram Reels into reviewab
 
 - Generate a guide once the playlist is ready and browse saved versions.
 - Open a saved guide’s evidence to trace instructions back to source clips and transcript excerpts.
-- Download `AGENTS.md` or export the playlist as `playlist.json`. See the [example guide](examples/AGENTS.md) and [example manifest](examples/playlist.json).
+- Download `AGENTS.md` or export the playlist as `playlist.json`. See the [example guide](api/tests/fixtures/expected-guide.md) and [example manifest](examples/playlist.json).
 
 ## Architecture
 

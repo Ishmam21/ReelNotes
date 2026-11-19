@@ -13,3 +13,7 @@ __pycache__/
 
 # Local comprehensive project documentation
 /docs/REELNOTES_PROJECT_GUIDE.md
+
+# Generated example guides
+/examples/AGENTS.md
+/examples/real-playlist/AGENTS.md

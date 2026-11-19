@@ -75,7 +75,7 @@ def test_authored_fixture_export():
     data=json.loads((fixtures/'guide_snapshot.json').read_text())
     value=json.loads((fixtures/'guide_response.json').read_text())
     _,md=generate_guide(data,invoke=response(value))
-    assert md==(Path(__file__).parents[2]/'examples/AGENTS.md').read_text()
+    assert md==(fixtures/'expected-guide.md').read_text()
 
 def test_provider_schema_keeps_local_constraints():
     from app.guide import Extraction, Consolidation, provider_schema
