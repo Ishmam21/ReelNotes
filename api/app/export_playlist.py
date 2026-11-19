@@ -3,7 +3,8 @@ import argparse
 from pathlib import Path
 from uuid import UUID
 from sqlalchemy import select
-from app.db import get_engine, playlists, videos, playlist_items
+from app.auth import Account
+from app.db import accounts, get_engine, playlists, videos, playlist_items
 from app.main import generate, download_guide
 
 
@@ -16,13 +17,20 @@ def main():
     playlist_id = args.playlist_id
     if playlist_id is None:
         with get_engine().connect() as conn:
-            matches = conn.execute(select(playlists.c.id).join(playlist_items, playlists.c.id == playlist_items.c.playlist_id)
+            matches = conn.execute(select(playlists.c.id).where(playlists.c.owner_id.is_not(None)).join(playlist_items, playlists.c.id == playlist_items.c.playlist_id)
                 .join(videos, videos.c.id == playlist_items.c.video_id).where(videos.c.shortcode == args.shortcode)).scalars().all()
         if len(matches) != 1:
             raise SystemExit('Specify --playlist-id: expected exactly one playlist containing this Reel.')
         playlist_id = matches[0]
-    guide = generate(playlist_id)
-    markdown = download_guide(guide['id']).body.decode('utf-8')
+    with get_engine().connect() as conn:
+        owner = conn.execute(select(accounts.c.id, accounts.c.email)
+            .join(playlists, playlists.c.owner_id == accounts.c.id)
+            .where(playlists.c.id == playlist_id)).mappings().first()
+    if owner is None:
+        raise SystemExit('Playlist not found or still awaiting assignment to an account.')
+    account = Account.model_validate(owner)
+    guide = generate(playlist_id, account)
+    markdown = download_guide(guide['id'], account).body.decode('utf-8')
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(markdown, encoding='utf-8')
     print(markdown)

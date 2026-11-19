@@ -14,6 +14,8 @@ dependencies = [
     "pydantic>=2.10,<3",
     "python-dotenv>=1,<2",
     "av<19",
+    "pwdlib[argon2]>=0.2,<1",
+    "email-validator>=2,<3",
 ]
 [dependency-groups]
 dev = ["pytest>=8,<10", "httpx>=0.28,<1"]

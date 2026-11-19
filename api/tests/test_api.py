@@ -7,7 +7,18 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.dialects import postgresql
 from app import main
+from app.auth import Account, current_account
 from app.schemas import PlaylistCreate
+
+
+@pytest.fixture(autouse=True)
+def signed_in_account():
+    account = Account(id=uuid4(), email="owner@example.com")
+    main.app.dependency_overrides[current_account] = lambda: account
+    try:
+        yield
+    finally:
+        main.app.dependency_overrides.pop(current_account)
 
 
 def test_duplicate_tracking_urls_return_existing_membership(monkeypatch):
@@ -76,8 +87,9 @@ def test_cors_rejects_unrelated_origin():
 
 def test_database_handler_logs_original_traceback(monkeypatch, caplog):
     from sqlalchemy.exc import OperationalError
+    parameters = {'secret': 'must-not-be-logged'}
     def broken_engine():
-        raise OperationalError('SELECT 1', {'secret': 'must-not-be-logged'},
+        raise OperationalError('SELECT 1', parameters,
                                RuntimeError('connection diagnostic'), hide_parameters=True)
     monkeypatch.setattr(main, 'get_engine', broken_engine)
     with caplog.at_level('ERROR', logger='app.main'):

@@ -3,29 +3,52 @@ import json
 import logging
 import os
 from datetime import datetime, timezone
+from urllib.parse import urlsplit
 from uuid import UUID, uuid4
-from fastapi import FastAPI, HTTPException, Response
+from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select, func, delete, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.responses import JSONResponse
+from .auth import CurrentAccount, router as auth_router
 from .db import get_engine, playlists, videos, playlist_items, guides
 from .transcribe import has_committed_transcript
 from .schemas import (PlaylistCreate, ItemCreate, PlaylistResponse, PlaylistSummary, PlaylistDetail, VideoCard, GuideResponse, RetryResponse)
 
 app = FastAPI(title="ReelNotes")
+app.include_router(auth_router)
 logger = logging.getLogger(__name__)
 web_origin = os.getenv("WEB_ORIGIN", "http://localhost:3000").rstrip("/")
 allowed_origins = [web_origin]
 # Browsers treat localhost and 127.0.0.1 as distinct origins.
-from urllib.parse import urlsplit
 origin = urlsplit(web_origin)
 if origin.scheme == "http" and origin.hostname in ("localhost", "127.0.0.1"):
     port = f":{origin.port}" if origin.port else ""
     allowed_origins = [f"http://localhost{port}", f"http://127.0.0.1{port}"]
-app.add_middleware(CORSMiddleware, allow_origins=allowed_origins, allow_methods=["GET", "POST", "DELETE"], allow_headers=["Content-Type"])
+app.add_middleware(CORSMiddleware, allow_origins=allowed_origins, allow_credentials=True, allow_methods=["GET", "POST", "DELETE"], allow_headers=["Content-Type"])
+
+@app.middleware("http")
+async def protect_browser_requests(request: Request, call_next):
+    origin = request.headers.get("origin")
+    if request.method in {"POST", "DELETE"} and origin is not None and origin not in allowed_origins:
+        return JSONResponse(status_code=403, content={"detail": "Request origin is not allowed"})
+    response = await call_next(request)
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error(request: Request, exc: RequestValidationError):
+    if request.url.path in {"/auth/register", "/auth/login"}:
+        # FastAPI's default validation response includes the submitted input.
+        errors = [{"loc": error["loc"], "msg": error["msg"], "type": error["type"]} for error in exc.errors()]
+        return JSONResponse(status_code=422, content={"detail": errors})
+    return await request_validation_exception_handler(request, exc)
+
 
 @app.exception_handler(SQLAlchemyError)
 def database_error(request, exc):
@@ -56,8 +79,8 @@ def database_error(request, exc):
 def configuration_error(request, exc):
     return JSONResponse(status_code=503, content={"detail": "Service unavailable. Check the API configuration, then try again."})
 
-def require_playlist(conn, playlist_id, lock=False):
-    query = select(playlists).where(playlists.c.id == playlist_id)
+def require_playlist(conn, playlist_id, owner_id, lock=False):
+    query = select(playlists).where(playlists.c.id == playlist_id, playlists.c.owner_id == owner_id)
     if lock:
         query = query.with_for_update()
     row = conn.execute(query).mappings().first()
@@ -65,10 +88,18 @@ def require_playlist(conn, playlist_id, lock=False):
         raise HTTPException(404, "Playlist not found")
     return row
 
-def require_video(conn, video_id):
-    row = conn.execute(select(videos).where(videos.c.id == video_id)).mappings().first()
+def require_video(conn, video_id, owner_id):
+    row = conn.execute(select(videos).where(videos.c.id == video_id, videos.c.owner_id == owner_id)).mappings().first()
     if row is None:
         raise HTTPException(404, "Video not found")
+    return row
+
+def require_guide(conn, guide_id, owner_id, *columns):
+    row = conn.execute(select(*columns).select_from(guides)
+        .join(playlists, guides.c.playlist_id == playlists.c.id)
+        .where(guides.c.id == guide_id, playlists.c.owner_id == owner_id)).mappings().first()
+    if row is None:
+        raise HTTPException(404, "Guide not found")
     return row
 
 def ordered_items(conn, playlist_id):
@@ -81,24 +112,24 @@ def card(row):
     return {"video_id": row["id"], "position": row["position"], "title": row["title"], "source_url": row["source_url"], "thumbnail_url": f'/videos/{row["id"]}/thumbnail' if row["thumbnail_webp"] else None, "state": row["state"], "error_code": row["error_code"], "error_message": row["error_message"], "claims_count": len(row["claims"]) if row["claims"] is not None else None}
 
 @app.post("/playlists", status_code=201, response_model=PlaylistResponse)
-def create_playlist(body: PlaylistCreate):
+def create_playlist(body: PlaylistCreate, account: CurrentAccount):
     with get_engine().begin() as conn:
-        return dict(conn.execute(insert(playlists).values(id=uuid4(), name=body.name, created_at=datetime.now(timezone.utc)).returning(playlists)).mappings().one())
+        return dict(conn.execute(insert(playlists).values(id=uuid4(), owner_id=account.id, name=body.name, created_at=datetime.now(timezone.utc)).returning(playlists)).mappings().one())
 
 @app.get("/playlists", response_model=list[PlaylistSummary])
-def list_playlists():
+def list_playlists(account: CurrentAccount):
     with get_engine().connect() as conn:
-        rows = conn.execute(select(playlists, func.count(playlist_items.c.video_id).label("item_count")).outerjoin(playlist_items, playlists.c.id == playlist_items.c.playlist_id).group_by(playlists.c.id).order_by(playlists.c.created_at.desc())).mappings().all()
+        rows = conn.execute(select(playlists, func.count(playlist_items.c.video_id).label("item_count")).outerjoin(playlist_items, playlists.c.id == playlist_items.c.playlist_id).where(playlists.c.owner_id == account.id).group_by(playlists.c.id).order_by(playlists.c.created_at.desc())).mappings().all()
         return [dict(row) for row in rows]
 
 @app.get("/playlists/{playlist_id}", response_model=PlaylistDetail)
-def playlist_detail(playlist_id: UUID):
+def playlist_detail(playlist_id: UUID, account: CurrentAccount):
     with get_engine().connect() as conn:
-        row = require_playlist(conn, playlist_id)
+        row = require_playlist(conn, playlist_id, account.id)
         return {**dict(row), "items": [card(item) for item in ordered_items(conn, playlist_id)]}
 
 @app.post("/playlists/{playlist_id}/items", response_model=VideoCard)
-def add_item(playlist_id: UUID, body: ItemCreate, response: Response):
+def add_item(playlist_id: UUID, body: ItemCreate, response: Response, account: CurrentAccount):
     from .ingest import canonicalize_url
     try:
         shortcode, url = canonicalize_url(body.url)
@@ -106,7 +137,7 @@ def add_item(playlist_id: UUID, body: ItemCreate, response: Response):
         raise HTTPException(422, str(exc)) from exc
     with get_engine().begin() as conn:
         # Serialize membership/position changes, including simultaneous duplicate imports.
-        require_playlist(conn, playlist_id, lock=True)
+        require_playlist(conn, playlist_id, account.id, lock=True)
         existing = conn.execute(select(videos, playlist_items.c.position).join(playlist_items, videos.c.id == playlist_items.c.video_id).where(playlist_items.c.playlist_id == playlist_id, videos.c.shortcode == shortcode)).mappings().first()
         if existing:
             return card(existing)
@@ -114,47 +145,47 @@ def add_item(playlist_id: UUID, body: ItemCreate, response: Response):
         if count >= 10:
             raise HTTPException(409, "A playlist can contain at most ten videos. Remove one before adding another.")
         now = datetime.now(timezone.utc)
-        conn.execute(insert(videos).values(id=uuid4(), shortcode=shortcode, source_url=url, title=f"Instagram Reel {shortcode}", state="queued", attempts=0, created_at=now, updated_at=now).on_conflict_do_nothing(index_elements=[videos.c.shortcode]))
-        video = conn.execute(select(videos).where(videos.c.shortcode == shortcode)).mappings().one()
+        conn.execute(insert(videos).values(id=uuid4(), owner_id=account.id, shortcode=shortcode, source_url=url, title=f"Instagram Reel {shortcode}", state="queued", attempts=0, created_at=now, updated_at=now).on_conflict_do_nothing(index_elements=[videos.c.owner_id, videos.c.shortcode]))
+        video = conn.execute(select(videos).where(videos.c.owner_id == account.id, videos.c.shortcode == shortcode)).mappings().one()
         position = (highest if highest is not None else 0) + 1
         conn.execute(insert(playlist_items).values(playlist_id=playlist_id, video_id=video["id"], position=position))
         response.status_code = 202 if video["state"] in ("queued", "downloading", "transcribing", "extracting") else 200
         return card({**video, "position": position})
 
 @app.delete("/playlists/{playlist_id}/items/{video_id}", status_code=204)
-def remove_item(playlist_id: UUID, video_id: UUID):
+def remove_item(playlist_id: UUID, video_id: UUID, account: CurrentAccount):
     with get_engine().begin() as conn:
-        require_playlist(conn, playlist_id, lock=True)
+        require_playlist(conn, playlist_id, account.id, lock=True)
         conn.execute(delete(playlist_items).where(playlist_items.c.playlist_id == playlist_id, playlist_items.c.video_id == video_id))
     return Response(status_code=204)
 
 @app.post("/videos/{video_id}/retry", response_model=RetryResponse)
-def retry_video(video_id: UUID):
+def retry_video(video_id: UUID, account: CurrentAccount):
     with get_engine().begin() as conn:
-        row = require_video(conn, video_id)
+        row = require_video(conn, video_id, account.id)
         if row["state"] == "failed" or (row['state'] == 'ready' and not has_committed_transcript(row)):
             conn.execute(update(videos).where(videos.c.id == video_id, videos.c.state == row['state']).values(state="queued", attempts=0, lease_token=None, lease_until=None, error_code=None, error_message=None, updated_at=datetime.now(timezone.utc)))
         state = conn.execute(select(videos.c.state).where(videos.c.id == video_id)).scalar_one()
         return {"video_id": video_id, "state": state}
 
 @app.get("/videos/{video_id}/thumbnail")
-def thumbnail(video_id: UUID):
+def thumbnail(video_id: UUID, account: CurrentAccount):
     with get_engine().connect() as conn:
-        row = require_video(conn, video_id)
+        row = require_video(conn, video_id, account.id)
         if not row["thumbnail_webp"]:
             raise HTTPException(404, "Thumbnail unavailable")
         return Response(bytes(row["thumbnail_webp"]), media_type="image/webp")
 
 @app.get("/videos/{video_id}/transcript")
-def transcript(video_id: UUID):
+def transcript(video_id: UUID, account: CurrentAccount):
     with get_engine().connect() as conn:
-        row = require_video(conn, video_id)
+        row = require_video(conn, video_id, account.id)
         return {"video_id": video_id, "segments": row["segments"] or []}
 
 @app.get("/playlists/{playlist_id}/manifest")
-def manifest(playlist_id: UUID):
+def manifest(playlist_id: UUID, account: CurrentAccount):
     with get_engine().connect() as conn:
-        playlist = require_playlist(conn, playlist_id)
+        playlist = require_playlist(conn, playlist_id, account.id)
         items = []
         for row in ordered_items(conn, playlist_id):
             item = card(row)
@@ -165,10 +196,10 @@ def manifest(playlist_id: UUID):
     return Response(json.dumps(jsonable_encoder(data), ensure_ascii=False, indent=2), media_type="application/json", headers={"Content-Disposition": 'attachment; filename="playlist.json"'})
 
 @app.post("/playlists/{playlist_id}/guides", response_model=GuideResponse)
-def generate(playlist_id: UUID):
+def generate(playlist_id: UUID, account: CurrentAccount):
     from .guide import build_snapshot, snapshot_hash, generate_guide
     with get_engine().begin() as conn:
-        playlist = require_playlist(conn, playlist_id, lock=True)
+        playlist = require_playlist(conn, playlist_id, account.id, lock=True)
         items = ordered_items(conn, playlist_id)
         blocking = [str(row["id"]) for row in items if row["state"] != "ready" or not has_committed_transcript(row)]
         if not items or blocking:
@@ -189,24 +220,20 @@ def generate(playlist_id: UUID):
         return dict(conn.execute(select(guides.c.id, guides.c.markdown, guides.c.created_at).where(guides.c.playlist_id == playlist_id, guides.c.input_hash == digest)).mappings().one())
 
 @app.get("/playlists/{playlist_id}/guides", response_model=list[GuideResponse])
-def guide_versions(playlist_id: UUID):
+def guide_versions(playlist_id: UUID, account: CurrentAccount):
     with get_engine().connect() as conn:
-        require_playlist(conn, playlist_id)
+        require_playlist(conn, playlist_id, account.id)
         return [dict(row) for row in conn.execute(select(guides.c.id, guides.c.markdown, guides.c.created_at).where(guides.c.playlist_id == playlist_id).order_by(guides.c.created_at.desc())).mappings()]
 
 @app.get("/guides/{guide_id}/download")
-def download_guide(guide_id: UUID):
+def download_guide(guide_id: UUID, account: CurrentAccount):
     with get_engine().connect() as conn:
-        markdown = conn.execute(select(guides.c.markdown).where(guides.c.id == guide_id)).scalar_one_or_none()
-        if markdown is None:
-            raise HTTPException(404, "Guide not found")
+        markdown = require_guide(conn, guide_id, account.id, guides.c.markdown)["markdown"]
         return Response(markdown, media_type="text/markdown; charset=utf-8", headers={"Content-Disposition": 'attachment; filename="AGENTS.md"'})
 
 @app.get("/guides/{guide_id}/evidence")
-def guide_evidence(guide_id: UUID):
+def guide_evidence(guide_id: UUID, account: CurrentAccount):
     with get_engine().connect() as conn:
-        row = conn.execute(select(guides.c.input_snapshot, guides.c.result).where(guides.c.id == guide_id)).mappings().first()
-        if row is None:
-            raise HTTPException(404, "Guide not found")
+        row = require_guide(conn, guide_id, account.id, guides.c.input_snapshot, guides.c.result)
         # Read the immutable saved evidence, not the playlist's current videos.
         return {"snapshot": row['input_snapshot'], "result": row['result']}

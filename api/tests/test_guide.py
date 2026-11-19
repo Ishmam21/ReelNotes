@@ -157,12 +157,14 @@ def test_uncertainty_and_missing_context_survive_consolidated_rendering():
 
 def test_evidence_endpoint_uses_saved_snapshot():
     from app import main
+    from app.auth import Account
     from unittest.mock import MagicMock,patch
+    from uuid import uuid4
     saved={'input_snapshot':snapshot(),'result':output()}
     engine=MagicMock()
     engine.connect.return_value.__enter__.return_value.execute.return_value.mappings.return_value.first.return_value=saved
     with patch.object(main,'get_engine',return_value=engine):
-        evidence=main.guide_evidence('fixture')
+        evidence=main.guide_evidence(uuid4(), Account(id=uuid4(), email="owner@example.com"))
     assert evidence['snapshot']==saved['input_snapshot']
     assert evidence['result']['groups'][0]['members']==['v1:c01','v2:c01']
     assert evidence['snapshot']['videos'][0]['segments'][0]['start_ms']==12000

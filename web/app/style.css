@@ -235,3 +235,11 @@ pre.guide-document { margin: 0 0 20px; padding: 26px 22px; min-height: 280px; ma
 button.theme-toggle { min-height: 34px; padding: 7px 0; gap: 8px; color: var(--muted); background: transparent; border: 0; font-size: 12px; font-weight: 400; }
 button.theme-toggle:hover { background: transparent; color: var(--ink); }
 @media(max-width:420px) { .site-header nav { gap: 16px; } .theme-toggle span { display: none; } }
+
+.account-panel { max-width: 440px; margin: 0 auto; }
+.account-panel h1 { font-size: clamp(26px, 5vw, 34px); }
+.account-panel form { display: grid; gap: 16px; margin-bottom: 12px; }
+.account-panel form .error { margin: 0; }
+.account-bar { display: flex; align-items: center; justify-content: flex-end; gap: 14px; margin-bottom: 24px; }
+.account-bar span { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+.account-bar button { flex-shrink: 0; }

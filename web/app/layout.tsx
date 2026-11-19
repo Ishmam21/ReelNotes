@@ -1,4 +1,5 @@
 import './style.css';
+import AccountGate from '@/components/AccountGate';
 import ThemeToggle from '@/components/ThemeToggle';
 import type { Metadata } from 'next';
 export const metadata: Metadata = {
@@ -15,7 +16,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       <a className="brand" href="/" aria-label="ReelNotes home"><img className="logo-light" src="/reelnotes-logo.svg" width="179" height="40" alt="ReelNotes" /><img className="logo-dark" src="/reelnotes-logo-dark.svg" width="179" height="40" alt="ReelNotes" /></a>
       <nav aria-label="Main navigation"><ThemeToggle /><a href="/">Playlists <span aria-hidden="true">↗</span></a></nav>
     </div></header>
-    <main id="main">{children}</main>
+    <main id="main"><AccountGate>{children}</AccountGate></main>
     <footer className="site-footer"><span>ReelNotes</span><span>From saved advice to working instructions.</span></footer>
   </body></html>;
 }

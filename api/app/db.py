@@ -3,16 +3,25 @@ import os
 from functools import lru_cache
 from pathlib import Path
 from dotenv import load_dotenv
-from sqlalchemy import MetaData, Table, Column, String, Integer, DateTime, LargeBinary, create_engine
+from sqlalchemy import MetaData, Table, Column, String, Integer, DateTime, LargeBinary, ForeignKey, create_engine
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.engine import make_url
 
 # This local app uses api/.env as its configuration, even if the shell has older exports.
 load_dotenv(Path(__file__).resolve().parents[1] / ".env", override=True)
 metadata = MetaData(schema="reelnotes")
-playlists = Table("playlists", metadata, Column("id", UUID(as_uuid=True), primary_key=True), Column("name", String), Column("created_at", DateTime(timezone=True)))
+accounts = Table("accounts", metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True), Column("email", String, nullable=False, unique=True),
+    Column("password_hash", String, nullable=False))
+sessions = Table("sessions", metadata,
+    Column("token_hash", LargeBinary, primary_key=True),
+    Column("account_id", UUID(as_uuid=True), ForeignKey("reelnotes.accounts.id", ondelete="CASCADE"), nullable=False),
+    Column("expires_at", DateTime(timezone=True), nullable=False))
+playlists = Table("playlists", metadata, Column("id", UUID(as_uuid=True), primary_key=True), Column("name", String),
+    Column("created_at", DateTime(timezone=True)), Column("owner_id", UUID(as_uuid=True), ForeignKey("reelnotes.accounts.id")))
 videos = Table("videos", metadata,
     Column("id", UUID(as_uuid=True), primary_key=True), Column("shortcode", String), Column("source_url", String),
+    Column("owner_id", UUID(as_uuid=True), ForeignKey("reelnotes.accounts.id")),
     Column("title", String), Column("creator", String), Column("duration_ms", Integer), Column("thumbnail_webp", LargeBinary),
     Column("state", String), Column("attempts", Integer), Column("lease_token", UUID(as_uuid=True)), Column("lease_until", DateTime(timezone=True)),
     Column("error_code", String), Column("error_message", String), Column("segments", JSONB), Column("claims", JSONB), Column("pipeline_version", String),
