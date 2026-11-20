@@ -6,6 +6,8 @@ ReelNotes helps developers turn advice from public Instagram Reels into reviewab
 ![FastAPI](https://img.shields.io/badge/FastAPI-API-009688?logo=fastapi&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-database-4169E1?logo=postgresql&logoColor=white)
 
+**[Open ReelNotes on Vercel](https://reel-notes-ten.vercel.app/)** · [FastAPI reference on Render](https://reelnotes-c73z.onrender.com/docs)
+
 <img src="docs/screenshots/playlist-workspace.png" alt="ReelNotes playlist workspace with processed Reel cards and a generated AGENTS.md guide side by side" width="900">
 
 ## Contents
@@ -14,6 +16,7 @@ ReelNotes helps developers turn advice from public Instagram Reels into reviewab
 - [Architecture](#architecture)
 - [Screenshots](#screenshots)
 - [Tech stack](#tech-stack)
+- [Hosted deployment](#hosted-deployment)
 - [Run locally](#run-locally)
 - [Database requirements](#database-requirements)
 - [Project scope](#project-scope)
@@ -40,10 +43,10 @@ ReelNotes helps developers turn advice from public Instagram Reels into reviewab
 
 ```mermaid
 flowchart LR
-    Browser --> Web["Next.js web app"]
-    Web -->|Same-origin API proxy| API["FastAPI"]
+    Browser --> Web["Next.js on Vercel"]
+    Web -->|Same-origin API proxy| API["FastAPI on Render"]
     API -->|Sessions, playlists, and guides| DB[("PostgreSQL")]
-    DB -->|Queued video jobs| Worker["Python worker"]
+    DB -->|Queued video jobs| Worker["Python worker on Render"]
     Worker -->|Transcripts, claims, and job state| DB
     Worker -->|Download public Reels| Instagram
     Worker -->|Transcribe prepared audio| Groq
@@ -80,6 +83,23 @@ Entry points are the [FastAPI routes](api/app/main.py), [background worker](api/
 | Media and speech | yt-dlp, FFmpeg, ffprobe, Groq Whisper Large V3 Turbo |
 | Guide generation | Gemini via LangChain structured output |
 
+## Hosted deployment
+
+| Service | URL |
+| --- | --- |
+| Next.js frontend on Vercel | [reel-notes-ten.vercel.app](https://reel-notes-ten.vercel.app/) |
+| FastAPI and Python worker on Render | `https://reelnotes-c73z.onrender.com/` · [Interactive API docs](https://reelnotes-c73z.onrender.com/docs) |
+
+The Vercel app forwards browser requests under `/api` to Render. Set these variables for a deployment using the hosted URLs above.
+
+| Service | Variable | Value |
+| --- | --- | --- |
+| Vercel frontend | `API_BASE_URL` | `https://reelnotes-c73z.onrender.com` |
+| Render API | `WEB_ORIGIN` | `https://reel-notes-ten.vercel.app` |
+| Render worker | `GROQ_API_KEY` | Your Groq key, stored in Render's Environment settings |
+
+The worker uploads the prepared WAV to Groq's `whisper-large-v3-turbo` endpoint and stores the timestamped transcript in PostgreSQL. FFmpeg and ffprobe are required on the worker. Render also needs the PostgreSQL and Gemini settings listed below. [Groq speech-to-text docs](https://console.groq.com/docs/speech-to-text)
+
 ## Run locally
 
 **Prerequisites** · Python 3.11–3.13, uv, Node.js 20.9+, npm, PostgreSQL, FFmpeg and ffprobe, a Groq API key, and a Google Gemini API key with access to your selected model. Set up the [database schema](#database-requirements) before starting the app.
@@ -102,7 +122,7 @@ From the repository root:
 | `WEB_ORIGIN` | `api/.env` | Defaults to `http://localhost:3000` |
 | `API_BASE_URL` | `web/.env.local` | Defaults to `http://127.0.0.1:8000` |
 
-Keep credentials in `api/.env` and out of Git and browser-facing variables. On Render, set `GROQ_API_KEY` in the environment of the service that runs the worker. FFmpeg and ffprobe still prepare the audio before upload.
+Keep credentials in `api/.env` and out of Git and browser-facing variables.
 
 ### Start the three processes
 
