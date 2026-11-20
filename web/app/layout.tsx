@@ -17,6 +17,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       <nav aria-label="Main navigation"><ThemeToggle /><a href="/">Playlists <span aria-hidden="true">↗</span></a></nav>
     </div></header>
     <main id="main"><AccountGate>{children}</AccountGate></main>
-    <footer className="site-footer"><span>ReelNotes</span><span>From saved advice to working instructions.</span></footer>
+    <footer className="site-footer">
+      <span>ReelNotes</span>
+      <span>From saved advice to working instructions.</span>
+      <span>© 2026 Fahim Ishmam</span>
+    </footer>
   </body></html>;
 }
