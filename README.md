@@ -6,7 +6,9 @@ ReelNotes helps developers turn advice from public Instagram Reels into reviewab
 ![FastAPI](https://img.shields.io/badge/FastAPI-API-009688?logo=fastapi&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-database-4169E1?logo=postgresql&logoColor=white)
 
-**[Open ReelNotes on Vercel](https://reel-notes-ten.vercel.app/)** · [FastAPI reference on Render](https://reelnotes-c73z.onrender.com/docs)
+## [Launch ReelNotes ↗](https://reel-notes-ten.vercel.app/)
+
+[FastAPI reference on Render](https://reelnotes-c73z.onrender.com/docs)
 
 <img src="docs/screenshots/playlist-workspace.png" alt="ReelNotes playlist workspace with processed Reel cards and a generated AGENTS.md guide side by side" width="900">
 
