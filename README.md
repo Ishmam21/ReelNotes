@@ -46,12 +46,13 @@ flowchart LR
     DB -->|Queued video jobs| Worker["Python worker"]
     Worker -->|Transcripts, claims, and job state| DB
     Worker -->|Download public Reels| Instagram
+    Worker -->|Transcribe prepared audio| Groq
     Worker -->|Extract advice from transcript text| Gemini
     API -->|Consolidate playlist claims| Gemini
 ```
 
 1. **Queue.** FastAPI validates the Reel URL, checks playlist ownership, and inserts or reuses a video row in PostgreSQL. The browser can poll for progress while the worker runs.
-2. **Process.** The worker claims a queued job with a renewable lease, downloads media with yt-dlp, and transcribes audio locally with faster-whisper. Gemini extracts claims from the transcript text.
+2. **Process.** The worker claims a queued job with a renewable lease, downloads media with yt-dlp, and prepares audio with FFmpeg. Groq transcribes the audio with Whisper Large V3 Turbo and returns segment timestamps. Gemini extracts claims from the transcript text.
 3. **Generate.** On request, FastAPI sends playlist claims to Gemini for consolidation, validates the evidence references, and saves the Markdown and input snapshot. A saved version retains its source evidence when the playlist changes.
 
 Entry points are the [FastAPI routes](api/app/main.py), [background worker](api/app/worker.py), and [guide pipeline](api/app/guide.py).
@@ -76,12 +77,12 @@ Entry points are the [FastAPI routes](api/app/main.py), [background worker](api/
 | HTTP API and validation | FastAPI, Uvicorn, Pydantic |
 | Authentication | PostgreSQL-backed cookie sessions, Argon2id via pwdlib |
 | Database access | PostgreSQL, SQLAlchemy Core, psycopg |
-| Media and speech | yt-dlp, FFmpeg, ffprobe, faster-whisper |
+| Media and speech | yt-dlp, FFmpeg, ffprobe, Groq Whisper Large V3 Turbo |
 | Guide generation | Gemini via LangChain structured output |
 
 ## Run locally
 
-**Prerequisites** · Python 3.11–3.13, uv, Node.js 20.9+, npm, PostgreSQL, FFmpeg and ffprobe, and a Google Gemini API key with access to your selected model. Set up the [database schema](#database-requirements) before starting the app.
+**Prerequisites** · Python 3.11–3.13, uv, Node.js 20.9+, npm, PostgreSQL, FFmpeg and ffprobe, a Groq API key, and a Google Gemini API key with access to your selected model. Set up the [database schema](#database-requirements) before starting the app.
 
 ### Install and configure
 
@@ -95,12 +96,13 @@ From the repository root:
 | Setting | Where | Value |
 | --- | --- | --- |
 | `DATABASE_URL` | `api/.env` | Connection string for the PostgreSQL database with the `reelnotes` schema |
+| `GROQ_API_KEY` | `api/.env` | Worker key for audio transcription with `whisper-large-v3-turbo` |
 | `GOOGLE_API_KEY` | `api/.env` | Server-side Gemini API key |
 | `GEMINI_MODEL` | `api/.env` | A Gemini model available to your key |
 | `WEB_ORIGIN` | `api/.env` | Defaults to `http://localhost:3000` |
 | `API_BASE_URL` | `web/.env.local` | Defaults to `http://127.0.0.1:8000` |
 
-Keep credentials in `api/.env` and out of Git and browser-facing variables. The first transcription downloads the faster-whisper model weights.
+Keep credentials in `api/.env` and out of Git and browser-facing variables. On Render, set `GROQ_API_KEY` in the environment of the service that runs the worker. FFmpeg and ffprobe still prepare the audio before upload.
 
 ### Start the three processes
 
@@ -150,6 +152,5 @@ Create the `reelnotes` schema before starting the app. The API uses [SQLAlchemy 
 
 ## Project scope
 
-- The source is on GitHub. Run the app locally to try it.
-- Process public Reels you have permission to use. Speech recognition runs locally, and the resulting text is sent to Gemini for analysis.
+- Process public Reels you have permission to use. Prepared audio is sent to Groq for transcription, and the resulting text is sent to Gemini for analysis.
 - Review generated instructions against their evidence before using them in a coding project. The linked examples use authored fixture data.

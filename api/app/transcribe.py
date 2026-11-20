@@ -1,6 +1,30 @@
-"""Local speech recognition. Model weights remain in the normal Hugging Face cache."""
+"""Transcribe prepared Reel audio with Groq and normalize timestamped segments."""
 import os
-from functools import lru_cache
+from pathlib import Path
+
+import httpx
+from pydantic import BaseModel
+
+GROQ_TRANSCRIPTION_URL = 'https://api.groq.com/openai/v1/audio/transcriptions'
+GROQ_TRANSCRIPTION_MODEL = 'whisper-large-v3-turbo'
+
+
+class TranscriptionError(RuntimeError):
+    """A transcription failure with a message safe to show in the playlist."""
+
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
+
+
+class GroqSegment(BaseModel):
+    start: float
+    end: float
+    text: str
+
+
+class GroqTranscript(BaseModel):
+    segments: list[GroqSegment]
 
 
 def has_committed_transcript(video):
@@ -21,13 +45,39 @@ def normalize_segments(segments):
     return result
 
 
-@lru_cache(maxsize=1)
-def speech_model():
-    from faster_whisper import WhisperModel
-    return WhisperModel(os.getenv('WHISPER_MODEL', 'base'), device=os.getenv('WHISPER_DEVICE', 'cpu'),
-                        compute_type=os.getenv('WHISPER_COMPUTE_TYPE', 'int8'))
-
-
 def transcribe_audio(path):
-    segments, _ = speech_model().transcribe(str(path), beam_size=5)
-    return normalize_segments(segments)  # Consuming the generator actually runs inference.
+    api_key = os.getenv('GROQ_API_KEY', '').strip()
+    if not api_key:
+        raise TranscriptionError('transcription_config', 'Set GROQ_API_KEY on the worker, then retry.')
+
+    audio_path = Path(path)
+    try:
+        with audio_path.open('rb') as audio:
+            response = httpx.post(
+                GROQ_TRANSCRIPTION_URL,
+                headers={'Authorization': f'Bearer {api_key}'},
+                data={
+                    'model': GROQ_TRANSCRIPTION_MODEL,
+                    'response_format': 'verbose_json',
+                    'timestamp_granularities[]': 'segment',
+                },
+                files={'file': (audio_path.name, audio, 'audio/wav')},
+                timeout=httpx.Timeout(90, connect=10),
+            )
+    except httpx.TimeoutException:
+        raise TranscriptionError('transcription_timeout', 'Groq transcription timed out. Retry this Reel.') from None
+    except httpx.RequestError:
+        raise TranscriptionError('transcription_unavailable', 'Could not reach Groq. Retry this Reel.') from None
+
+    if response.status_code in (401, 403):
+        raise TranscriptionError('transcription_config', 'Groq denied transcription. Check the worker API key and model access, then retry.')
+    if response.status_code == 429:
+        raise TranscriptionError('transcription_rate_limit', 'Groq’s transcription limit was reached. Retry after the limit resets.')
+    if not response.is_success:
+        raise TranscriptionError('transcription_failed', f'Groq transcription failed (HTTP {response.status_code}). Retry this Reel.')
+
+    try:
+        transcript = GroqTranscript.model_validate_json(response.content)
+        return normalize_segments(transcript.segments)
+    except (ValueError, OverflowError):
+        raise TranscriptionError('transcription_invalid', 'Groq returned invalid transcript segments. Retry this Reel.') from None

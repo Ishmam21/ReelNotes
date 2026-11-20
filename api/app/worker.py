@@ -13,7 +13,7 @@ from sqlalchemy import text
 from app.db import get_engine
 from app.guide import extract_claims
 from app.ingest import download_reel, prepare_media, webp_thumbnail
-from app.transcribe import transcribe_audio, has_committed_transcript
+from app.transcribe import TranscriptionError, transcribe_audio, has_committed_transcript
 
 ACTIVE = ('downloading', 'transcribing', 'extracting')
 PIPELINE_VERSION = '1'
@@ -109,7 +109,7 @@ def process_job(job, local_clip=None):
                 title = media['title']
                 save_stage(job, title=title, creator=media.get('creator'), duration_ms=duration,
                            thumbnail_webp=thumbnail, state='transcribing')
-                logging.info('Video %s: transcribing (first use may download model weights)', job['id'])
+                logging.info('Video %s: transcribing with Groq', job['id'])
                 segments = transcribe_audio(audio)
                 save_stage(job, segments=segments, state='extracting')
             logging.info('Video %s: extracting advice with Gemini', job['id'])
@@ -122,8 +122,12 @@ def process_job(job, local_clip=None):
     except Exception as exc:
         try:
             code = getattr(exc, 'code', 'processing_failed')
-            message = ('Required media dependency is missing. Install ffmpeg and ffprobe, then retry.'
-                       if isinstance(exc, FileNotFoundError) else str(exc) if code in ('source_unavailable', 'download_timeout', 'media_limit') else 'Processing failed. Check worker configuration, then retry or remove this clip.')
+            if isinstance(exc, TranscriptionError) or code in ('source_unavailable', 'download_timeout', 'media_limit'):
+                message = str(exc)
+            elif isinstance(exc, FileNotFoundError):
+                message = 'Required media dependency is missing. Install ffmpeg and ffprobe, then retry.'
+            else:
+                message = 'Processing failed. Check worker configuration, then retry or remove this clip.'
             save_stage(job, state='failed', error_code=code, error_message=message,
                        lease_token=None, lease_until=None)
         except LeaseLost:

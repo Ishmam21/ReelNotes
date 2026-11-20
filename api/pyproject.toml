@@ -8,17 +8,16 @@ dependencies = [
     "sqlalchemy>=2.0,<3",
     "psycopg[binary]>=3.2,<4",
     "yt-dlp>=2025.1",
-    "faster-whisper>=1.1,<2",
+    "httpx>=0.28,<1",
     "pillow>=11,<13",
     "langchain-google-genai>=2,<5",
     "pydantic>=2.10,<3",
     "python-dotenv>=1,<2",
-    "av<19",
     "pwdlib[argon2]>=0.2,<1",
     "email-validator>=2,<3",
 ]
 [dependency-groups]
-dev = ["pytest>=8,<10", "httpx>=0.28,<1"]
+dev = ["pytest>=8,<10"]
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]

@@ -1,5 +1,7 @@
 from types import SimpleNamespace
+import httpx
 import pytest
+from app import transcribe
 from app.ingest import canonicalize_url, choose_title
 from app.transcribe import normalize_segments
 
@@ -34,6 +36,58 @@ def test_empty_speech_and_ids():
 def test_invalid_timestamps():
     with pytest.raises(ValueError):
         normalize_segments([SimpleNamespace(start=1, end=1, text='Advice')])
+
+
+@pytest.mark.parametrize('payload, expected', [
+    ({'segments': [{'start': 0.25, 'end': 1.5, 'text': ' Advice '}]},
+     [dict(id='s001', start_ms=250, end_ms=1500, text='Advice')]),
+    ({'segments': []}, []),
+])
+def test_groq_upload_returns_normalized_segments(monkeypatch, tmp_path, payload, expected):
+    monkeypatch.setenv('GROQ_API_KEY', 'test-key')
+    audio = tmp_path / 'speech.wav'
+    audio.write_bytes(b'fake-wav-data')
+
+    def respond(request):
+        assert request.method == 'POST'
+        assert str(request.url) == 'https://api.groq.com/openai/v1/audio/transcriptions'
+        assert request.headers['authorization'] == 'Bearer test-key'
+        assert 'multipart/form-data' in request.headers['content-type']
+        for field in (
+            b'name="model"\r\n\r\nwhisper-large-v3-turbo',
+            b'name="response_format"\r\n\r\nverbose_json',
+            b'name="timestamp_granularities[]"\r\n\r\nsegment',
+            b'name="file"; filename="speech.wav"',
+            b'fake-wav-data',
+        ):
+            assert field in request.content
+        return httpx.Response(200, json=payload)
+
+    with httpx.Client(transport=httpx.MockTransport(respond)) as client:
+        monkeypatch.setattr(transcribe.httpx, 'post', client.post)
+        assert transcribe.transcribe_audio(audio) == expected
+
+
+@pytest.mark.parametrize('status, payload, code', [
+    (401, {'error': 'provider detail'}, 'transcription_config'),
+    (429, {'error': 'provider detail'}, 'transcription_rate_limit'),
+    (200, {'text': 'Missing the timestamped segments'}, 'transcription_invalid'),
+])
+def test_groq_failure_uses_safe_message(monkeypatch, tmp_path, status, payload, code):
+    monkeypatch.setenv('GROQ_API_KEY', 'test-key')
+    audio = tmp_path / 'speech.wav'
+    audio.touch()
+    monkeypatch.setattr(transcribe.httpx, 'post', lambda *args, **kwargs: httpx.Response(status, json=payload))
+    with pytest.raises(transcribe.TranscriptionError) as error:
+        transcribe.transcribe_audio(audio)
+    assert error.value.code == code
+    assert 'provider detail' not in str(error.value)
+
+
+def test_groq_requires_worker_key_before_upload(monkeypatch, tmp_path):
+    monkeypatch.delenv('GROQ_API_KEY', raising=False)
+    with pytest.raises(transcribe.TranscriptionError, match='Set GROQ_API_KEY'):
+        transcribe.transcribe_audio(tmp_path / 'unused.wav')
 
 
 def test_resume_extraction_without_transcription():
